@@ -12,6 +12,10 @@ const int dht_pin = 4;
 #define dht_type DHT22
 DHT dht(dht_pin, dht_type);
 
+// MQ-135 setup:
+#define rl_value 20
+#define ro_clean_air_factor 9.83
+
 // Time management:
 unsigned long previous_millis = 0;
 const long interval = 5000;
@@ -64,7 +68,7 @@ void loop() {
             float temperature = dht.readTemperature();
             float heat_index = dht.computeHeatIndex(temperature, humidity, false);
 
-            float gas = analogRead(mq_pin);
+            float ppm = gasPercentage();
 
             if (debug >= 2) {
                 Serial.print("- ");
@@ -78,7 +82,8 @@ void loop() {
                 Serial.print("% - Heat Index: ");
                 Serial.print(heat_index);
                 Serial.print(" °C - Gas Concentration: ");
-                Serial.println(gas);
+                Serial.print(ppm);
+                Serial.println(" ppm");
             }
         }
     } else {
@@ -139,4 +144,16 @@ void connectToWifi() {
             Serial.println("\n- Failed to connect to Wi-Fi.");
         }
     }
+}
+
+// Gas concentration function:
+float gasPercentage() {
+    int adc_value = analogRead(mq_pin);
+
+    float voltage = adc_value * (3.3 / 1023.0);
+    float sensor_resistance = ((3.3 - voltage) / voltage) * rl_value;
+    float ratio = sensor_resistance / ro_clean_air_factor;
+    float ppm = 10000.0 * pow(ratio, -2.11);
+
+    return ppm;
 }
