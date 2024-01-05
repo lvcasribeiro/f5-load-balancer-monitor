@@ -1,4 +1,5 @@
 // Libraries import:
+#include <DHT.h>
 #include <WiFi.h>
 #include <time.h>
 
@@ -7,14 +8,22 @@ const int ldr_pin = 32;
 const int mq_pin = 33;
 const int dht_pin = 4;
 
+// DHT setup:
+#define dht_type DHT22
+DHT dht(dht_pin, dht_type);
+
+// Time management:
+unsigned long previous_millis = 0;
+const long interval = 5000;
+
 // Local date and time capture and time zone correction:
 #define NTP_SERVER "pool.ntp.br"
 const int daylight_offset_sec = 0;
 const long gmt_offset_sec = -3600*3;
 
 // Wi-fi connection, network SSID and password:
-#define WIFI_SSID "your_wifi_ssid"
-#define WIFI_PASSWORD "your_wifi_password"
+#define WIFI_SSID "CLARO_2GDD5E65"
+#define WIFI_PASSWORD "12DD5E65"
 
 // Global variables:
 const int debug = 2;
@@ -36,6 +45,8 @@ void setup() {
 
     configTime(gmt_offset_sec, daylight_offset_sec, NTP_SERVER);
     connectToWifi();
+
+    dht.begin();
 }
 
 // Loop function:
@@ -44,6 +55,32 @@ void loop() {
 
     if (WiFi.status() == WL_CONNECTED) {
         timeCapture();
+
+        if (current_millis - previous_millis >= interval) {
+            previous_millis = current_millis;
+
+            int light_analog_value = analogRead(ldr_pin);
+            float humidity = dht.readHumidity();
+            float temperature = dht.readTemperature();
+            float heat_index = dht.computeHeatIndex(temperature, humidity, false);
+
+            float gas = analogRead(mq_pin);
+
+            if (debug >= 2) {
+                Serial.print("- ");
+                Serial.print(current_time);
+                Serial.print(" - Light analog value: ");
+                Serial.print(light_analog_value);
+                Serial.print(" - Temperature: ");
+                Serial.print(temperature);
+                Serial.print(" °C - Humidity: ");
+                Serial.print(humidity);
+                Serial.print("% - Heat Index: ");
+                Serial.print(heat_index);
+                Serial.print(" °C - Gas Concentration: ");
+                Serial.println(gas);
+            }
+        }
     } else {
         if (debug >= 1) {
             Serial.println("- Loss of Wi-Fi connection.");
