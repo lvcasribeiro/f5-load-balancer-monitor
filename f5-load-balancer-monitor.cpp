@@ -11,7 +11,9 @@ const int ldr_pin = 32;
 const int mq_pin = 33;
 const int dht_pin = 4;
 
-#define heartbeat_pin 15
+#define HEARTBEAT_PIN 15
+#define SENT_PIN 21
+#define FAIL_PIN 5
 
 // DHT setup:
 #define dht_type DHT22
@@ -22,8 +24,10 @@ DHT dht(dht_pin, dht_type);
 #define ro_clean_air_factor 9.83
 
 // Time management:
-unsigned long previous_millis = 0;
-const long interval = 5000;
+unsigned long realtime_millis = 0;
+unsigned long json_millis = 0;
+const long realtime_interval = 5000;
+const long json_interval = 60000;
 
 // Local date and time capture and time zone correction:
 #define NTP_SERVER "pool.ntp.br"
@@ -56,7 +60,9 @@ void setup() {
     pinMode(ldr_pin, INPUT);
     pinMode(dht_pin, INPUT);
     pinMode(mq_pin, INPUT);
-    pinMode(heartbeat_pin, OUTPUT);
+    pinMode(HEARTBEAT_PIN, OUTPUT);
+    pinMode(SENT_PIN, OUTPUT);
+    pinMode(FAIL_PIN, OUTPUT);
 
     Serial.begin(115200);
 
@@ -76,8 +82,8 @@ void loop() {
     if (WiFi.status() == WL_CONNECTED) {
         timeCapture();
 
-        if (current_millis - previous_millis >= interval) {
-            previous_millis = current_millis;
+        if (current_millis - realtime_millis >= realtime_interval) {
+            realtime_millis = current_millis;
 
             int light_analog_value = analogRead(ldr_pin);
             float humidity = dht.readHumidity();
@@ -108,6 +114,12 @@ void loop() {
             }
 
             firebaseRealtimeSync(temperature, humidity, heat_index, light_analog_value, ppm);
+
+            if (current_millis - json_millis >= json_interval) {
+                json_millis = current_millis;
+
+                firebaseJsonSync(temperature, humidity, heat_index, light_analog_value, ppm, current_time, current_date);
+            }
         }
     } else {
         if (debug >= 1) {
@@ -190,14 +202,14 @@ void firebaseRealtimeSync(float temperature, float humidity, float heat_index, i
         Firebase.set(firebaseData, "measured_variables/luminosity", light_analog_value);
         Firebase.set(firebaseData, "measured_variables/gas_concentration", ppm);
 
-        digitalWrite(heartbeat_pin, HIGH);
+        digitalWrite(HEARTBEAT_PIN, HIGH);
 
         unsigned long led_heartbeat_millis = millis();
         bool led_heartbeat_on = true;
 
         while (led_heartbeat_on) {
             if(millis() - led_heartbeat_millis >= 750) { 
-                digitalWrite(heartbeat_pin, LOW);
+                digitalWrite(HEARTBEAT_PIN, LOW);
                 led_heartbeat_on = false;
             }
         }
@@ -206,6 +218,49 @@ void firebaseRealtimeSync(float temperature, float humidity, float heat_index, i
             Serial.print("- Error updating cloud data: [FIREBASE LATENCY][ttl] - ");
             Serial.print(firebaseData.errorReason());
             Serial.println(".");
+        }
+    }
+}
+
+// Firebase JSON sync function:
+void firebaseJsonSync(float temperature, float humidity, float heat_index, int light_analog_value, float ppm, String current_time, String current_date) {
+    json_measured_variables.set("temperature", temperature);
+    json_measured_variables.set("humidity", humidity);
+    json_measured_variables.set("heat_index", heat_index);
+    json_measured_variables.set("luminosity", light_analog_value);
+    json_measured_variables.set("gas_concentration", ppm);
+    json_measured_variables.set("timestamp", current_time);
+    json_measured_variables.set("date", current_date);
+
+    if (Firebase.pushJSON(firebaseData, "/json_storage", json_measured_variables)) {
+        digitalWrite(SENT_PIN, HIGH);
+
+        unsigned long led_sent_millis = millis();
+        bool led_sent_on = true;
+
+        while (led_sent_on) {
+            if(millis() - led_sent_millis >= 750) { 
+                digitalWrite(SENT_PIN, LOW);
+                led_sent_on = false;
+            }
+        }
+    } else {
+        if(debug >= 1) {
+            Serial.print("- Error uploading JSON to cloud database: [FIREBASE LATENCY][ttl] - ");
+            Serial.print(firebaseData.errorReason());
+            Serial.println(".");
+        }
+
+        digitalWrite(FAIL_PIN, HIGH);
+
+        unsigned long led_fail_millis = millis();
+        bool led_fail_on = true;
+
+        while (led_fail_on) {
+            if(millis() - led_fail_millis >= 750) { 
+                digitalWrite(FAIL_PIN, LOW);
+                led_fail_on = false;
+            }
         }
     }
 }
