@@ -1,4 +1,7 @@
 // Libraries import:
+#include <Adafruit_Sensor.h>
+#include <FirebaseESP32.h>
+#include <ArduinoJson.h>
 #include <DHT.h>
 #include <WiFi.h>
 #include <time.h>
@@ -7,6 +10,8 @@
 const int ldr_pin = 32;
 const int mq_pin = 33;
 const int dht_pin = 4;
+
+#define heartbeat_pin 15
 
 // DHT setup:
 #define dht_type DHT22
@@ -26,8 +31,15 @@ const int daylight_offset_sec = 0;
 const long gmt_offset_sec = -3600*3;
 
 // Wi-fi connection, network SSID and password:
-#define WIFI_SSID "CLARO_2GDD5E65"
-#define WIFI_PASSWORD "12DD5E65"
+#define WIFI_SSID "your_wifi_ssid"
+#define WIFI_PASSWORD "your_wifi_password"
+
+// Cloud database connection - Firebase, host and auth:
+#define FIREBASE_AUTH "your_firebase_auth"
+#define FIREBASE_HOST "your_firebase_host"
+
+FirebaseData firebaseData;
+FirebaseJson json_measured_variables;
 
 // Global variables:
 const int debug = 2;
@@ -44,11 +56,15 @@ void setup() {
     pinMode(ldr_pin, INPUT);
     pinMode(dht_pin, INPUT);
     pinMode(mq_pin, INPUT);
+    pinMode(heartbeat_pin, OUTPUT);
 
     Serial.begin(115200);
 
     configTime(gmt_offset_sec, daylight_offset_sec, NTP_SERVER);
     connectToWifi();
+
+    Firebase.begin(FIREBASE_HOST, FIREBASE_AUTH);
+    Firebase.reconnectWiFi(true);
 
     dht.begin();
 }
@@ -84,6 +100,32 @@ void loop() {
                 Serial.print(" °C - Gas Concentration: ");
                 Serial.print(ppm);
                 Serial.println(" ppm");
+            }
+
+            if (Firebase.get(firebaseData, "/measured_variables")) {
+                Firebase.set(firebaseData, "measured_variables/temperature", temperature);
+                Firebase.set(firebaseData, "measured_variables/humidity", humidity);
+                Firebase.set(firebaseData, "measured_variables/heat_index", heat_index);
+                Firebase.set(firebaseData, "measured_variables/luminosity", light_analog_value);
+                Firebase.set(firebaseData, "measured_variables/gas_concentration", ppm);
+
+                digitalWrite(heartbeat_pin, HIGH);
+
+                unsigned long led_heartbeat_millis = millis();
+                bool led_heartbeat_on = true;
+
+                while (led_heartbeat_on) {
+                    if(millis() - led_heartbeat_millis >= 750) { 
+                        digitalWrite(heartbeat_pin, LOW);
+                        led_heartbeat_on = false;
+                    }
+                }
+            } else {
+                if (debug >= 1) {
+                    Serial.print("- Error updating cloud data: [FIREBASE LATENCY][ttl] - ");
+                    Serial.print(firebaseData.errorReason());
+                    Serial.println(".");
+                }
             }
         }
     } else {
