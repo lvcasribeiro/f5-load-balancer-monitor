@@ -86,6 +86,11 @@ void loop() {
 
             float ppm = gasPercentage();
 
+            temperature = round(temperature * 100.0) / 100.0;
+            humidity = round(humidity * 100.0) / 100.0;
+            heat_index = round(heat_index * 100.0) / 100.0;
+            ppm = round(ppm * 100.0) / 100.0;
+
             if (debug >= 2) {
                 Serial.print("- ");
                 Serial.print(current_time);
@@ -102,31 +107,7 @@ void loop() {
                 Serial.println(" ppm");
             }
 
-            if (Firebase.get(firebaseData, "/measured_variables")) {
-                Firebase.set(firebaseData, "measured_variables/temperature", temperature);
-                Firebase.set(firebaseData, "measured_variables/humidity", humidity);
-                Firebase.set(firebaseData, "measured_variables/heat_index", heat_index);
-                Firebase.set(firebaseData, "measured_variables/luminosity", light_analog_value);
-                Firebase.set(firebaseData, "measured_variables/gas_concentration", ppm);
-
-                digitalWrite(heartbeat_pin, HIGH);
-
-                unsigned long led_heartbeat_millis = millis();
-                bool led_heartbeat_on = true;
-
-                while (led_heartbeat_on) {
-                    if(millis() - led_heartbeat_millis >= 750) { 
-                        digitalWrite(heartbeat_pin, LOW);
-                        led_heartbeat_on = false;
-                    }
-                }
-            } else {
-                if (debug >= 1) {
-                    Serial.print("- Error updating cloud data: [FIREBASE LATENCY][ttl] - ");
-                    Serial.print(firebaseData.errorReason());
-                    Serial.println(".");
-                }
-            }
+            firebaseRealtimeSync(temperature, humidity, heat_index, light_analog_value, ppm);
         }
     } else {
         if (debug >= 1) {
@@ -198,4 +179,33 @@ float gasPercentage() {
     float ppm = 10000.0 * pow(ratio, -2.11);
 
     return ppm;
+}
+
+// Firebase realtime sync function:
+void firebaseRealtimeSync(float temperature, float humidity, float heat_index, int light_analog_value, float ppm) {
+    if (Firebase.get(firebaseData, "/measured_variables")) {
+        Firebase.set(firebaseData, "measured_variables/temperature", temperature);
+        Firebase.set(firebaseData, "measured_variables/humidity", humidity);
+        Firebase.set(firebaseData, "measured_variables/heat_index", heat_index);
+        Firebase.set(firebaseData, "measured_variables/luminosity", light_analog_value);
+        Firebase.set(firebaseData, "measured_variables/gas_concentration", ppm);
+
+        digitalWrite(heartbeat_pin, HIGH);
+
+        unsigned long led_heartbeat_millis = millis();
+        bool led_heartbeat_on = true;
+
+        while (led_heartbeat_on) {
+            if(millis() - led_heartbeat_millis >= 750) { 
+                digitalWrite(heartbeat_pin, LOW);
+                led_heartbeat_on = false;
+            }
+        }
+    } else {
+        if (debug >= 1) {
+            Serial.print("- Error updating cloud data: [FIREBASE LATENCY][ttl] - ");
+            Serial.print(firebaseData.errorReason());
+            Serial.println(".");
+        }
+    }
 }
