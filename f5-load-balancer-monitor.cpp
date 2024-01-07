@@ -9,6 +9,7 @@
 // Pinout:
 const int ldr_pin = 32;
 const int mq_pin = 33;
+const int ky_pin = 35;
 const int dht_pin = 4;
 
 #define HEARTBEAT_PIN 15
@@ -26,8 +27,8 @@ DHT dht(dht_pin, dht_type);
 // Time management:
 unsigned long realtime_millis = 0;
 unsigned long json_millis = 0;
-const long realtime_interval = 5000;
-const long json_interval = 60000;
+const long realtime_interval = 30000;
+const long json_interval = 300000;
 
 // Local date and time capture and time zone correction:
 #define NTP_SERVER "pool.ntp.br"
@@ -59,6 +60,7 @@ char current_week_day[10];
 void setup() {
     pinMode(ldr_pin, INPUT);
     pinMode(dht_pin, INPUT);
+    pinMode(ky_pin, INPUT);
     pinMode(mq_pin, INPUT);
     pinMode(HEARTBEAT_PIN, OUTPUT);
     pinMode(SENT_PIN, OUTPUT);
@@ -82,20 +84,22 @@ void loop() {
     if (WiFi.status() == WL_CONNECTED) {
         timeCapture();
 
+        int light_analog_value = analogRead(ldr_pin);
+        float humidity = dht.readHumidity();
+        float temperature = dht.readTemperature();
+        float heat_index = dht.computeHeatIndex(temperature, humidity, false);
+
+        float ppm = gasPercentage();
+        float noise = soundDecibels();
+
+        temperature = round(temperature * 100.0) / 100.0;
+        humidity = round(humidity * 100.0) / 100.0;
+        heat_index = round(heat_index * 100.0) / 100.0;
+        ppm = round(ppm * 100.0) / 100.0;
+        noise = round(noise * 100.0) / 100.0;
+
         if (current_millis - realtime_millis >= realtime_interval) {
             realtime_millis = current_millis;
-
-            int light_analog_value = analogRead(ldr_pin);
-            float humidity = dht.readHumidity();
-            float temperature = dht.readTemperature();
-            float heat_index = dht.computeHeatIndex(temperature, humidity, false);
-
-            float ppm = gasPercentage();
-
-            temperature = round(temperature * 100.0) / 100.0;
-            humidity = round(humidity * 100.0) / 100.0;
-            heat_index = round(heat_index * 100.0) / 100.0;
-            ppm = round(ppm * 100.0) / 100.0;
 
             if (debug >= 2) {
                 Serial.print("- ");
@@ -110,16 +114,18 @@ void loop() {
                 Serial.print(heat_index);
                 Serial.print(" °C - Gas Concentration: ");
                 Serial.print(ppm);
-                Serial.println(" ppm");
+                Serial.print(" ppm - Sound Intensity: ");
+                Serial.print(noise);
+                Serial.println(" dB");
             }
 
-            firebaseRealtimeSync(temperature, humidity, heat_index, light_analog_value, ppm);
+            firebaseRealtimeSync(temperature, humidity, heat_index, light_analog_value, ppm, noise);
+        }
 
-            if (current_millis - json_millis >= json_interval) {
-                json_millis = current_millis;
+        if (current_millis - json_millis >= json_interval) {
+            json_millis = current_millis;
 
-                firebaseJsonSync(temperature, humidity, heat_index, light_analog_value, ppm, current_time, current_date);
-            }
+            firebaseJsonSync(temperature, humidity, heat_index, light_analog_value, ppm, noise, current_time, current_date);
         }
     } else {
         if (debug >= 1) {
@@ -193,14 +199,30 @@ float gasPercentage() {
     return ppm;
 }
 
+// Decibels sound conversion function:
+float soundDecibels() {
+    int adc_value = analogRead(ky_pin);
+
+    float voltage_ratio = static_cast<float>(adc_value) / 3.3;
+
+    if (voltage_ratio <= 0) {
+        return -1.0;
+    }
+
+    float dB = 20 * log10(voltage_ratio);
+
+    return dB;
+}
+
 // Firebase realtime sync function:
-void firebaseRealtimeSync(float temperature, float humidity, float heat_index, int light_analog_value, float ppm) {
+void firebaseRealtimeSync(float temperature, float humidity, float heat_index, int light_analog_value, float ppm, float noise) {
     if (Firebase.get(firebaseData, "/measured_variables")) {
         Firebase.set(firebaseData, "measured_variables/temperature", temperature);
         Firebase.set(firebaseData, "measured_variables/humidity", humidity);
         Firebase.set(firebaseData, "measured_variables/heat_index", heat_index);
         Firebase.set(firebaseData, "measured_variables/luminosity", light_analog_value);
         Firebase.set(firebaseData, "measured_variables/gas_concentration", ppm);
+        Firebase.set(firebaseData, "measured_variables/sound_noise", noise);
 
         digitalWrite(HEARTBEAT_PIN, HIGH);
 
@@ -223,12 +245,13 @@ void firebaseRealtimeSync(float temperature, float humidity, float heat_index, i
 }
 
 // Firebase JSON sync function:
-void firebaseJsonSync(float temperature, float humidity, float heat_index, int light_analog_value, float ppm, String current_time, String current_date) {
+void firebaseJsonSync(float temperature, float humidity, float heat_index, int light_analog_value, float ppm, float noise, String current_time, String current_date) {
     json_measured_variables.set("temperature", temperature);
     json_measured_variables.set("humidity", humidity);
     json_measured_variables.set("heat_index", heat_index);
     json_measured_variables.set("luminosity", light_analog_value);
     json_measured_variables.set("gas_concentration", ppm);
+    json_measured_variables.set("sound_noise", noise);
     json_measured_variables.set("timestamp", current_time);
     json_measured_variables.set("date", current_date);
 
