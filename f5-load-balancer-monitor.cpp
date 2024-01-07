@@ -16,7 +16,7 @@ const int dht_pin = 4;
 #define SENT_PIN 21
 #define FAIL_PIN 5
 
-// DHT setup:
+// DHT-22 setup:
 #define dht_type DHT22
 DHT dht(dht_pin, dht_type);
 
@@ -35,7 +35,7 @@ const long json_interval = 300000;
 const int daylight_offset_sec = 0;
 const long gmt_offset_sec = -3600*3;
 
-// Wi-fi connection, network SSID and password:
+// Wi-Fi connection, network SSID and password:
 #define WIFI_SSID "your_wifi_ssid"
 #define WIFI_PASSWORD "your_wifi_password"
 
@@ -131,6 +131,7 @@ void loop() {
         if (debug >= 1) {
             Serial.println("- Loss of Wi-Fi connection.");
         }
+
         connectToWifi();
     }
 }
@@ -230,7 +231,7 @@ void firebaseRealtimeSync(float temperature, float humidity, float heat_index, i
         bool led_heartbeat_on = true;
 
         while (led_heartbeat_on) {
-            if(millis() - led_heartbeat_millis >= 750) { 
+            if (millis() - led_heartbeat_millis >= 750) { 
                 digitalWrite(HEARTBEAT_PIN, LOW);
                 led_heartbeat_on = false;
             }
@@ -262,13 +263,13 @@ void firebaseJsonSync(float temperature, float humidity, float heat_index, int l
         bool led_sent_on = true;
 
         while (led_sent_on) {
-            if(millis() - led_sent_millis >= 750) { 
+            if (millis() - led_sent_millis >= 750) { 
                 digitalWrite(SENT_PIN, LOW);
                 led_sent_on = false;
             }
         }
     } else {
-        if(debug >= 1) {
+        if (debug >= 1) {
             Serial.print("- Error uploading JSON to cloud database: [FIREBASE LATENCY][ttl] - ");
             Serial.print(firebaseData.errorReason());
             Serial.println(".");
@@ -280,7 +281,7 @@ void firebaseJsonSync(float temperature, float humidity, float heat_index, int l
         bool led_fail_on = true;
 
         while (led_fail_on) {
-            if(millis() - led_fail_millis >= 750) { 
+            if (millis() - led_fail_millis >= 750) { 
                 digitalWrite(FAIL_PIN, LOW);
                 led_fail_on = false;
             }
