@@ -27,8 +27,8 @@ DHT dht(dht_pin, dht_type);
 // Time management:
 unsigned long realtime_millis = 0;
 unsigned long json_millis = 0;
-const long realtime_interval = 30000;
-const long json_interval = 300000;
+const long realtime_interval = 5*1000;
+const long json_interval = 5*60*1000;
 
 // Local date and time capture and time zone correction:
 #define NTP_SERVER "pool.ntp.br"
@@ -55,6 +55,10 @@ char current_time[15];
 char current_hour[3];
 char current_minute[3];
 char current_week_day[10];
+
+String ip_address = "0.0.0.0";
+String board_status = "Offline";
+String cloud_status = "Connected";
 
 // Setup function:
 void setup() {
@@ -119,7 +123,7 @@ void loop() {
                 Serial.println(" dB");
             }
 
-            firebaseRealtimeSync(temperature, humidity, heat_index, light_analog_value, ppm, noise);
+            firebaseRealtimeSync(temperature, humidity, heat_index, light_analog_value, ppm, noise, ip_address, board_status, cloud_status);
         }
 
         if (current_millis - json_millis >= json_interval) {
@@ -130,6 +134,8 @@ void loop() {
     } else {
         if (debug >= 1) {
             Serial.println("- Loss of Wi-Fi connection.");
+
+            board_status = "Offline";
         }
 
         connectToWifi();
@@ -180,6 +186,9 @@ void connectToWifi() {
         if (debug >= 1) {
             Serial.print("\n- Connected to Wi-Fi network, IP address: ");
             Serial.println(WiFi.localIP());
+
+            ip_address = WiFi.localIP().toString();
+            board_status = "Online";
         }
     } else {
         if (debug >= 1) {
@@ -216,7 +225,7 @@ float soundDecibels() {
 }
 
 // Firebase realtime sync function:
-void firebaseRealtimeSync(float temperature, float humidity, float heat_index, int light_analog_value, float ppm, float noise) {
+void firebaseRealtimeSync(float temperature, float humidity, float heat_index, int light_analog_value, float ppm, float noise, String ip_address, String board_status, String cloud_status) {
     if (Firebase.get(firebaseData, "/measured_variables")) {
         Firebase.set(firebaseData, "measured_variables/temperature", temperature);
         Firebase.set(firebaseData, "measured_variables/humidity", humidity);
@@ -225,7 +234,12 @@ void firebaseRealtimeSync(float temperature, float humidity, float heat_index, i
         Firebase.set(firebaseData, "measured_variables/gas_concentration", ppm);
         Firebase.set(firebaseData, "measured_variables/sound_noise", noise);
 
+        Firebase.set(firebaseData, "settings/ip_address", ip_address);
+        Firebase.set(firebaseData, "settings/board_status", board_status);
+        Firebase.set(firebaseData, "settings/cloud_status", cloud_status);
+
         digitalWrite(HEARTBEAT_PIN, HIGH);
+        cloud_status = "Connected";
 
         unsigned long led_heartbeat_millis = millis();
         bool led_heartbeat_on = true;
@@ -242,6 +256,8 @@ void firebaseRealtimeSync(float temperature, float humidity, float heat_index, i
             Serial.print(firebaseData.errorReason());
             Serial.println(".");
         }
+
+        cloud_status = "Disconnected";
     }
 }
 
@@ -258,6 +274,7 @@ void firebaseJsonSync(float temperature, float humidity, float heat_index, int l
 
     if (Firebase.pushJSON(firebaseData, "/json_storage", json_measured_variables)) {
         digitalWrite(SENT_PIN, HIGH);
+        cloud_status = "Connected";
 
         unsigned long led_sent_millis = millis();
         bool led_sent_on = true;
@@ -276,6 +293,7 @@ void firebaseJsonSync(float temperature, float humidity, float heat_index, int l
         }
 
         digitalWrite(FAIL_PIN, HIGH);
+        cloud_status = "Disconnected";
 
         unsigned long led_fail_millis = millis();
         bool led_fail_on = true;
